@@ -62,6 +62,15 @@ def _eth_ok(s: str) -> bool:
     return v.eip55_state(s) != "bad"
 
 
+def _wif_ok(s: str) -> bool:
+    """Bitcoin WIF: Base58Check, version 0x80, 32-byte key, optional
+    trailing 0x01 compression marker. Checksum makes this exact."""
+    p = v.b58check_verify(s)
+    if p is None or not p.startswith(b"\x80"):
+        return False
+    return len(p) == 33 or (len(p) == 34 and p[-1] == 1)
+
+
 PATTERNS = [
     # --- addresses (public data) ---
     (rf"\bbc1p[{B32}]{{58}}\b", "address", "BTC", False, "medium",
@@ -89,6 +98,8 @@ PATTERNS = [
     (rf"\b[{B58}]{{32,44}}\b", "address", "SOL", False, "low",
      _solana_ok, "Solana address (32-byte base58)"),
     # --- secrets ---
+    (rf"\b[5KL][{B58}]{{50,51}}\b", "private_key", "BTC", True, "critical",
+     _wif_ok, "Bitcoin WIF private key"),
     (r"\b[0-9a-fA-F]{64}\b", "private_key", "", True, "critical",
      None, "64-hex secret (private key shape; context decides)"),
     (r"\bnsec1[a-z0-9]{58}\b", "private_key", "NOSTR", True, "critical",

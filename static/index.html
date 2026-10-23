@@ -70,7 +70,7 @@
   <input id="q" placeholder="search masked value / target / label" size="30" oninput="load()">
   <select id="fchain" onchange="load()"><option value="">all chains</option></select>
   <select id="ftype" onchange="load()"><option value="">all types</option><option>address</option><option>seed_phrase</option><option>private_key</option><option>api_key</option><option>miner_indicator</option></select>
-  <select id="fsource" onchange="load()"><option value="">all sources</option><option value="paste">paste</option><option value="recon">ReconAnything</option><option value="manual">manual</option><option value="url">URL scan</option><option value="blockchain">blockchain</option></select>
+  <select id="fsource" onchange="load()"><option value="">all sources</option><option value="paste">paste</option><option value="recon">ReconAnything</option><option value="manual">manual</option><option value="url">URL scan</option><option value="blockchain">blockchain</option><option value="derived">derived</option></select>
   <select id="fstatus" onchange="load()"><option value="">all statuses</option><option>new</option><option>reviewed</option><option>reported</option><option>ignored</option></select>
   <select id="fsort" onchange="load()"><option value="">newest first</option><option value="usd">biggest balance first</option></select>
   <button class="ghost" onclick="location.href='/api/export.json'">Export JSON</button>
@@ -84,6 +84,18 @@
 
 <script>
 const $=id=>document.getElementById(id);
+function shortAddr(a){return a.length>20?a.slice(0,10)+'…'+a.slice(-6):a}
+function ctlBalText(f){
+ const b=f.controls_balance;
+ if(!b||!Object.keys(b).length) return ' · balance pending';
+ if(b.not_public) return ' · balance not public';
+ if(!b.ok) return ' · balance lookup failed';
+ return ` · <b>$${b.usd??'?'}</b> (${b.balance} ${b.unit||''})`;
+}
+function controlsChip(f){
+ if(!f.controls_address) return '';
+ return `<br><span style="color:#f7931a">controls <span class=mono>${shortAddr(f.controls_address)}</span>${ctlBalText(f)}</span>`;
+}
 function balCell(f){
  if(f.type!='address') return '';
  if(!f.balance_json) return '<span style="color:#8a94a8">pending</span>';
@@ -111,7 +123,7 @@ async function load(){
  const d=await (await fetch('/api/findings?'+p)).json();
  $('rows').innerHTML=d.findings.map(f=>`<tr>
   <td>${f.type}</td><td>${f.chain||''}</td>
-  <td class=mono>${f.masked_value}</td><td>${balCell(f)}</td><td>${f.target||''}</td><td>${f.source}</td>
+  <td class=mono>${f.masked_value}${controlsChip(f)}</td><td>${balCell(f)}</td><td>${f.target||''}</td><td>${f.source}</td>
   <td class="sev-${f.severity}">${f.severity}</td><td>${f.status}</td>
   <td>${(f.first_seen||'').slice(0,10)}</td>
   <td><button class=ghost onclick="detail(${f.id})">Open</button></td></tr>`).join('');
@@ -151,6 +163,7 @@ async function detail(id){
  <h3>${f.type} ${f.chain?'('+f.chain+')':''}</h3>
  <p><b>Value:</b><br><span class=mono>${f.masked_value}</span></p>
  <p><b>Fingerprint:</b><br><span class=mono>${f.fingerprint}</span></p>
+ ${f.controls_address?`<p><b>Controls wallet:</b><br><span class=mono>${f.controls_address}</span> (${f.controls_chain})<br><b>Balance:</b>${ctlBalText(f).replace(' · ',' ')}<br><span style="color:#8a94a8">Derived from this secret at ingest. The secret itself was never stored.</span></p>`:''}
  <p><b>Label:</b> ${f.label||''}<br><b>Found on:</b> ${f.target||''}<br><b>Source:</b> ${f.source}<br>
  <b>Severity:</b> ${f.severity}<br><b>First seen:</b> ${f.first_seen}<br><b>Last seen:</b> ${f.last_seen}</p>
  ${f.note?`<p><b>Note:</b> ${f.note}</p>`:''}

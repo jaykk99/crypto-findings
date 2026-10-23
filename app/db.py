@@ -10,7 +10,8 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 
-from .parser import fingerprint
+from . import derive
+from .parser import Artifact, fingerprint
 
 DB_PATH = os.environ.get("CRYPTO_FINDINGS_DB",
                          os.path.join(os.path.dirname(__file__), "..", "findings.db"))
@@ -56,9 +57,17 @@ def init_db() -> None:
             note TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'new',
             balance_json TEXT,
+            controls_address TEXT NOT NULL DEFAULT '',
+            controls_chain TEXT NOT NULL DEFAULT '',
             first_seen TEXT NOT NULL,
             last_seen TEXT NOT NULL
         )""")
+        # Migration for DBs created before the controls_* columns.
+        cols = {r[1] for r in c.execute("PRAGMA table_info(findings)")}
+        for col in ("controls_address", "controls_chain"):
+            if col not in cols:
+                c.execute(f"ALTER TABLE findings ADD COLUMN {col}"
+                          " TEXT NOT NULL DEFAULT ''")
 
 
 def upsert(artifact, source: str, target: str = "", note: str = "") -> bool:
@@ -74,11 +83,40 @@ def upsert(artifact, source: str, target: str = "", note: str = "") -> bool:
             " last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (artifact.type, artifact.chain, stored, masked, fp, source,
              target, artifact.severity, artifact.label, note, ts, ts))
-        if cur.rowcount == 0:
+        is_new = cur.rowcount > 0
+        if not is_new:
             c.execute("UPDATE findings SET last_seen=? WHERE fingerprint=?",
                       (ts, fp))
-            return False
-        return True
+    if artifact.type in SECRET_TYPES:
+        # A complete secret in hand: link the wallet(s) it controls.
+        # Derivation is in-memory only (derive.py); masked/redacted
+        # values derive nothing and are skipped silently.
+        link_derived(artifact, target)
+    return is_new
+
+
+def link_derived(artifact, target: str = "") -> None:
+    """Record controls_address/controls_chain on a secret finding and
+    auto-create the derived wallet(s) as address findings (source
+    'derived') so the auto-balance enrichment picks them up."""
+    derived = derive.derivations(artifact.type, artifact.value,
+                                 artifact.chain)
+    if not derived:
+        return
+    fp = fingerprint(artifact.type, artifact.value)
+    primary = derived[0]
+    with conn() as c:
+        c.execute("UPDATE findings SET controls_address=?, controls_chain=?"
+                  " WHERE fingerprint=?",
+                  (primary["address"], primary["chain"], fp))
+    for d in derived:
+        upsert(Artifact("address", d["chain"], d["address"], secret=False,
+                        severity="high",
+                        label=f"{d['chain']} wallet derived from a"
+                              f" {artifact.type} ({d['kind']})"),
+               source="derived", target=target,
+               note="auto-derived at ingest from a secret finding; "
+                    "the secret itself was never stored")
 
 
 def balance_of(row: dict) -> dict:
@@ -89,6 +127,25 @@ def balance_of(row: dict) -> dict:
         except Exception:
             return {}
     return {}
+
+
+def _attach_controls(rows: list) -> list:
+    """Give secret rows a `controls_balance` dict: the parsed balance of
+    the wallet they control (from that address finding's enrichment)."""
+    addrs = sorted({r["controls_address"] for r in rows
+                    if r.get("controls_address")})
+    if not addrs:
+        return rows
+    ph = ",".join("?" * len(addrs))
+    with conn() as c:
+        found = c.execute(
+            "SELECT value, balance_json FROM findings WHERE type='address'"
+            f" AND value IN ({ph})", addrs).fetchall()
+    balances = {r["value"]: balance_of(dict(r)) for r in found}
+    for r in rows:
+        if r.get("controls_address"):
+            r["controls_balance"] = balances.get(r["controls_address"], {})
+    return rows
 
 
 def total_exposed_usd(rows=None) -> float:
@@ -129,11 +186,11 @@ def list_findings(search: str = "", chain: str = "", type_: str = "",
             rows = [dict(r) for r in c.execute(q, args)]
         rows.sort(key=lambda r: float(balance_of(r).get("usd") or 0),
                   reverse=True)
-        return rows[:limit]
+        return _attach_controls(rows[:limit])
     q += " ORDER BY first_seen DESC LIMIT ?"
     args.append(limit)
     with conn() as c:
-        return [dict(r) for r in c.execute(q, args)]
+        return _attach_controls([dict(r) for r in c.execute(q, args)])
 
 
 def unenriched_addresses():
@@ -157,7 +214,8 @@ def richest(limit: int = 10):
 def get(finding_id: int):
     with conn() as c:
         r = c.execute("SELECT * FROM findings WHERE id=?", (finding_id,)).fetchone()
-        return dict(r) if r else None
+        row = dict(r) if r else None
+    return _attach_controls([row])[0] if row else None
 
 
 def set_status(finding_id: int, status: str) -> bool:
