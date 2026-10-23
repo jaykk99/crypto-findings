@@ -1,0 +1,175 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Crypto Findings</title>
+<style>
+ body{background:#0b0e14;color:#dfe6f2;font-family:system-ui;margin:0;padding:20px}
+ h1{font-size:22px;margin:0 0 4px} .sub{color:#8a94a8;font-size:13px;margin-bottom:16px}
+ .cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+ .card{background:#141926;border:1px solid #232b3d;border-radius:8px;padding:10px 14px;min-width:110px}
+ .card b{font-size:20px;display:block} .card span{color:#8a94a8;font-size:12px}
+ section{background:#11151f;border:1px solid #232b3d;border-radius:8px;padding:14px;margin-bottom:16px}
+ textarea,input,select{background:#0d1119;color:#dfe6f2;border:1px solid #2a3247;border-radius:6px;padding:8px}
+ textarea{width:100%;height:90px} button{background:#f7931a;color:#111;border:0;border-radius:6px;padding:8px 14px;font-weight:600;cursor:pointer}
+ button.ghost{background:#232b3d;color:#dfe6f2}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ td,th{border-bottom:1px solid #232b3d;padding:6px 8px;text-align:left;vertical-align:top}
+ .mono{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
+ .sev-critical{color:#ff5c5c}.sev-high{color:#ffa02e}.sev-medium{color:#ffd94d}.sev-low{color:#8a94a8}
+ #drawer{position:fixed;right:0;top:0;bottom:0;width:380px;background:#141926;border-left:1px solid #2a3247;padding:18px;overflow:auto;display:none}
+ .warn{background:#2a1410;border:1px solid #6e2b1d;color:#ffb4a2;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:16px}
+</style>
+<h1>Crypto Findings</h1>
+<div class="sub">Every crypto artifact from your scans, in one place. Paste findings or pull them from ReconAnything.</div>
+<div class="warn">Secret material (seed phrases, private keys, API keys) is <b>never stored in full</b> here. Only a masked preview and a SHA-256 fingerprint are kept. Addresses are public data and are stored in full. This app catalogues findings only: no wallet import, no signing, no moving funds.</div>
+
+<div class="cards" id="cards"></div>
+<div class="card" style="margin-bottom:16px;border-color:#f7931a"><span>Total exposed value found</span><b id="totalusd" style="font-size:28px;color:#f7931a">$0</b> <span id="enrichedn"></span></div>
+
+<section>
+ <h3 style="margin-top:0">Richest wallets</h3>
+ <div id="richest"></div>
+</section>
+
+<section>
+ <h3 style="margin-top:0">Ingest a URL or the blockchain</h3>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+  <input id="uurl" placeholder="any URL: webpage, GitHub file, explorer page..." size="52">
+  <button onclick="ingestUrl()">Scan URL (+1 level of links)</button>
+ </div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap">
+  <input id="cinput" placeholder="wallet address, explorer URL, or tx hash" size="52">
+  <button onclick="ingestChain()">Pull from blockchain</button>
+  <span id="chainmsg" style="align-self:center;color:#8a94a8"></span>
+ </div>
+</section>
+
+<section>
+ <h3 style="margin-top:0">Paste findings</h3>
+ <textarea id="paste" placeholder="Paste scan output, JSON, notes... checksum-valid addresses, seeds, keys, miner hits get extracted."></textarea>
+ <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+  <input id="ptarget" placeholder="found on (host/target) optional" size="28">
+  <input id="pfile" type="file">
+  <button onclick="ingest()">Extract + import</button>
+  <button class="ghost" onclick="pullRecon()">Pull from ReconAnything</button>
+  <span id="ingestmsg" style="align-self:center;color:#8a94a8"></span>
+ </div>
+</section>
+
+<section>
+ <h3 style="margin-top:0">Add manually</h3>
+ <div style="display:flex;gap:8px;flex-wrap:wrap">
+  <input id="mval" placeholder="value (address / key / note)" size="44">
+  <input id="mtarget" placeholder="found on" size="20">
+  <input id="mnote" placeholder="note" size="20">
+  <button class="ghost" onclick="manual()">Add</button>
+ </div>
+</section>
+
+<section>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+  <input id="q" placeholder="search masked value / target / label" size="30" oninput="load()">
+  <select id="fchain" onchange="load()"><option value="">all chains</option></select>
+  <select id="ftype" onchange="load()"><option value="">all types</option><option>address</option><option>seed_phrase</option><option>private_key</option><option>api_key</option><option>miner_indicator</option></select>
+  <select id="fsource" onchange="load()"><option value="">all sources</option><option value="paste">paste</option><option value="recon">ReconAnything</option><option value="manual">manual</option><option value="url">URL scan</option><option value="blockchain">blockchain</option></select>
+  <select id="fstatus" onchange="load()"><option value="">all statuses</option><option>new</option><option>reviewed</option><option>reported</option><option>ignored</option></select>
+  <select id="fsort" onchange="load()"><option value="">newest first</option><option value="usd">biggest balance first</option></select>
+  <button class="ghost" onclick="location.href='/api/export.json'">Export JSON</button>
+  <button class="ghost" onclick="location.href='/api/export.csv'">Export CSV</button>
+ </div>
+ <table><thead><tr><th>Type</th><th>Chain</th><th>Value</th><th>Balance (USD)</th><th>Found on</th><th>Source</th><th>Severity</th><th>Status</th><th>First seen</th><th></th></tr></thead>
+ <tbody id="rows"></tbody></table>
+</section>
+
+<div id="drawer"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+function balCell(f){
+ if(f.type!='address') return '';
+ if(!f.balance_json) return '<span style="color:#8a94a8">pending</span>';
+ try{const b=JSON.parse(f.balance_json);
+  if(b.not_public) return '<span style="color:#8a94a8">not public</span>';
+  if(!b.ok) return '<span style="color:#ff5c5c">lookup failed</span>';
+  return `${b.balance} ${b.unit||''}<br><b>$${b.usd??'?'}</b>`;}catch(e){return ''}
+}
+async function stats(){
+ const s=await (await fetch('/api/stats')).json();
+ $('totalusd').textContent='$'+(s.total_exposed_usd||0).toLocaleString();
+ $('enrichedn').textContent=`across ${s.enriched_addresses||0} enriched wallets`;
+ const chains=Object.keys(s.by_chain||{});
+ const cur=$('fchain').value;
+ $('fchain').innerHTML='<option value="">all chains</option>'+chains.map(c=>`<option ${c==cur?'selected':''}>${c||'(none)'}</option>`).join('');
+ $('cards').innerHTML=`<div class=card><b>${s.total}</b><span>findings</span></div>`+
+  Object.entries(s.by_type||{}).map(([k,v])=>`<div class=card><b>${v}</b><span>${k}</span></div>`).join('')+
+  Object.entries(s.by_severity||{}).map(([k,v])=>`<div class=card><b>${v}</b><span>sev: ${k}</span></div>`).join('');
+ const r=await (await fetch('/api/richest')).json();
+ $('richest').innerHTML=r.richest.length? r.richest.map(f=>{const b=JSON.parse(f.balance_json);
+  return `<div style="padding:4px 0;border-bottom:1px solid #232b3d"><span class=mono>${f.masked_value}</span> <b style="color:#f7931a">$${b.usd}</b> <span style="color:#8a94a8">${b.balance} ${b.unit||''} on ${f.target||''}</span> <button class=ghost onclick="detail(${f.id})">Open</button></div>`}).join('') : '<span style="color:#8a94a8">No enriched wallets yet. Balances fill in automatically when addresses land.</span>';
+}
+async function load(){
+ const p=new URLSearchParams({search:$('q').value,chain:$('fchain').value,type:$('ftype').value,source:$('fsource').value,status:$('fstatus').value,sort:$('fsort').value});
+ const d=await (await fetch('/api/findings?'+p)).json();
+ $('rows').innerHTML=d.findings.map(f=>`<tr>
+  <td>${f.type}</td><td>${f.chain||''}</td>
+  <td class=mono>${f.masked_value}</td><td>${balCell(f)}</td><td>${f.target||''}</td><td>${f.source}</td>
+  <td class="sev-${f.severity}">${f.severity}</td><td>${f.status}</td>
+  <td>${(f.first_seen||'').slice(0,10)}</td>
+  <td><button class=ghost onclick="detail(${f.id})">Open</button></td></tr>`).join('');
+ stats();
+}
+async function ingestUrl(){
+ $('chainmsg').textContent='scanning URL...';
+ const r=await (await fetch('/api/ingest-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('uurl').value})})).json();
+ $('chainmsg').textContent=`URL: ${r.pages_count} pages scanned, ${r.artifacts_found} artifacts, ${r.imported_new} new, ${r.duplicates} dupes`; load();
+}
+async function ingestChain(){
+ $('chainmsg').textContent='pulling from chain...';
+ const r=await (await fetch('/api/ingest-chain',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:$('cinput').value})})).json();
+ $('chainmsg').textContent=r.ok?`1 ${r.input_kind} in, ${r.findings_out} findings out (${r.imported_new} new, ${r.duplicates} dupes, ${r.counterparties||0} counterparties, ${r.txs_seen||0} txs)`:'chain pull failed: '+(r.error||'');
+ load();
+}
+async function ingest(){
+ const fd=new FormData(); fd.append('text',$('paste').value); fd.append('target',$('ptarget').value);
+ if($('pfile').files[0]) fd.append('file',$('pfile').files[0]);
+ const r=await (await fetch('/api/ingest',{method:'POST',body:fd})).json();
+ $('ingestmsg').textContent=`parsed ${r.parsed}, new ${r.imported_new}, dupes ${r.duplicates}`; load();
+}
+async function pullRecon(){
+ $('ingestmsg').textContent='pulling...';
+ const r=await (await fetch('/api/pull',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+ $('ingestmsg').textContent=r.ok?`pulled: ${r.imported_new} new, ${r.duplicates} dupes across ${r.runs.length} runs`:'pull failed: '+r.error;
+ load();
+}
+async function manual(){
+ const r=await (await fetch('/api/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:$('mval').value,target:$('mtarget').value,note:$('mnote').value})})).json();
+ $('ingestmsg').textContent=r.imported_new?'added':'already on file (dupe)'; load();
+}
+async function detail(id){
+ const f=await (await fetch('/api/findings/'+id)).json();
+ $('drawer').style.display='block';
+ $('drawer').innerHTML=`<button class=ghost onclick="$('drawer').style.display='none'">Close</button>
+ <h3>${f.type} ${f.chain?'('+f.chain+')':''}</h3>
+ <p><b>Value:</b><br><span class=mono>${f.masked_value}</span></p>
+ <p><b>Fingerprint:</b><br><span class=mono>${f.fingerprint}</span></p>
+ <p><b>Label:</b> ${f.label||''}<br><b>Found on:</b> ${f.target||''}<br><b>Source:</b> ${f.source}<br>
+ <b>Severity:</b> ${f.severity}<br><b>First seen:</b> ${f.first_seen}<br><b>Last seen:</b> ${f.last_seen}</p>
+ ${f.note?`<p><b>Note:</b> ${f.note}</p>`:''}
+ ${f.balance_json?(()=>{const b=JSON.parse(f.balance_json);
+   if(b.not_public) return `<p><b>Balance:</b> not public. Monero balances cannot be viewed without a view key.</p>`;
+   if(!b.ok) return `<p><b>Balance:</b> lookup failed (${b.error||'error'}), fetched ${b.fetched_at||''}. Hit refresh to retry.</p>`;
+   const toks=(b.tokens||[]).filter(t=>t.balance>0).map(t=>`<br>&nbsp;&nbsp;${t.symbol}: ${t.balance} (~$${t.usd??'?'})`).join('');
+   return `<p><b>Balance:</b> ${b.balance} ${b.unit||''} = <b>$${b.usd??'?'}</b> (price $${b.price??'?'}, fetched ${b.fetched_at||''})${toks?`<br><b>Tokens:</b>${toks}`:''}</p>`;})():''}
+ <p><b>Status:</b> <select id=dstatus>${['new','reviewed','reported','ignored'].map(s=>`<option ${s==f.status?'selected':''}>${s}</option>`).join('')}</select>
+ <button class=ghost onclick="setStatus(${f.id})">Save</button></p>
+ ${f.type=='address'?`<button onclick="balance(${f.id})">Refresh balance</button>`:''}`;
+}
+async function setStatus(id){
+ await fetch(`/api/findings/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:$('dstatus').value})});
+ load(); detail(id);
+}
+async function balance(id){
+ const r=await (await fetch(`/api/findings/${id}/balance`,{method:'POST'})).json();
+ alert(r.ok?`${r.balance} ${r.unit} (~$${r.usd})`:(r.error||'lookup failed')); detail(id);
+}
+load();
+</script>
