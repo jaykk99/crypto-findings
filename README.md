@@ -3,8 +3,11 @@
 Standalone collector for crypto scan findings. Every crypto artifact
 from your scans in one place, with balances attached.
 
-**Access code:** `Sg6KwaDaiVGl0xFq` (set as `CRYPTO_FINDINGS_CODE` in
-the server env; the app is gated by it, same pattern as Jay's other apps)
+**Access code:** set your own value as `CRYPTO_FINDINGS_CODE` in the
+server env; the app is gated by it, same pattern as Jay's other apps.
+(A real code used to be written out here in plaintext — removed; see
+the security note in the audit history for this repo. Rotate the
+deployed env var if it still matches the old committed value.)
 
 ## What it does
 

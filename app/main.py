@@ -11,6 +11,7 @@ import io
 import json
 import os
 import secrets as pysecrets
+from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -22,12 +23,14 @@ CODE = os.environ.get("CRYPTO_FINDINGS_CODE", "")
 STATIC = os.path.join(os.path.dirname(__file__), "..", "static")
 COOKIE = "cf_code"
 
-app = FastAPI(title="Crypto Findings")
 
-
-@app.on_event("startup")
-def _init():
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
     db.init_db()
+    yield
+
+
+app = FastAPI(title="Crypto Findings", lifespan=_lifespan)
 
 
 def _authed(request: Request) -> bool:

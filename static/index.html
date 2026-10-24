@@ -84,17 +84,24 @@
 
 <script>
 const $=id=>document.getElementById(id);
+// Findings can carry free text an attacker controls (manual-entry notes,
+// a "target" label from a URL scan, pulled recon metadata) and this page
+// had no escaping anywhere — every field went straight into innerHTML.
+// Since the app is shared by anyone with the access code, one user's
+// crafted note/target would execute as script for every other viewer.
+// esc() is applied below to every field that isn't a server-fixed enum.
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function shortAddr(a){return a.length>20?a.slice(0,10)+'…'+a.slice(-6):a}
 function ctlBalText(f){
  const b=f.controls_balance;
  if(!b||!Object.keys(b).length) return ' · balance pending';
  if(b.not_public) return ' · balance not public';
  if(!b.ok) return ' · balance lookup failed';
- return ` · <b>$${b.usd??'?'}</b> (${b.balance} ${b.unit||''})`;
+ return ` · <b>$${esc(b.usd??'?')}</b> (${esc(b.balance)} ${esc(b.unit||'')})`;
 }
 function controlsChip(f){
  if(!f.controls_address) return '';
- return `<br><span style="color:#f7931a">controls <span class=mono>${shortAddr(f.controls_address)}</span>${ctlBalText(f)}</span>`;
+ return `<br><span style="color:#f7931a">controls <span class=mono>${esc(shortAddr(f.controls_address))}</span>${ctlBalText(f)}</span>`;
 }
 function balCell(f){
  if(f.type!='address') return '';
@@ -102,7 +109,7 @@ function balCell(f){
  try{const b=JSON.parse(f.balance_json);
   if(b.not_public) return '<span style="color:#8a94a8">not public</span>';
   if(!b.ok) return '<span style="color:#ff5c5c">lookup failed</span>';
-  return `${b.balance} ${b.unit||''}<br><b>$${b.usd??'?'}</b>`;}catch(e){return ''}
+  return `${esc(b.balance)} ${esc(b.unit||'')}<br><b>$${esc(b.usd??'?')}</b>`;}catch(e){return ''}
 }
 async function stats(){
  const s=await (await fetch('/api/stats')).json();
@@ -110,22 +117,22 @@ async function stats(){
  $('enrichedn').textContent=`across ${s.enriched_addresses||0} enriched wallets`;
  const chains=Object.keys(s.by_chain||{});
  const cur=$('fchain').value;
- $('fchain').innerHTML='<option value="">all chains</option>'+chains.map(c=>`<option ${c==cur?'selected':''}>${c||'(none)'}</option>`).join('');
- $('cards').innerHTML=`<div class=card><b>${s.total}</b><span>findings</span></div>`+
-  Object.entries(s.by_type||{}).map(([k,v])=>`<div class=card><b>${v}</b><span>${k}</span></div>`).join('')+
-  Object.entries(s.by_severity||{}).map(([k,v])=>`<div class=card><b>${v}</b><span>sev: ${k}</span></div>`).join('');
+ $('fchain').innerHTML='<option value="">all chains</option>'+chains.map(c=>`<option ${c==cur?'selected':''}>${esc(c||'(none)')}</option>`).join('');
+ $('cards').innerHTML=`<div class=card><b>${esc(s.total)}</b><span>findings</span></div>`+
+  Object.entries(s.by_type||{}).map(([k,v])=>`<div class=card><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('')+
+  Object.entries(s.by_severity||{}).map(([k,v])=>`<div class=card><b>${esc(v)}</b><span>sev: ${esc(k)}</span></div>`).join('');
  const r=await (await fetch('/api/richest')).json();
  $('richest').innerHTML=r.richest.length? r.richest.map(f=>{const b=JSON.parse(f.balance_json);
-  return `<div style="padding:4px 0;border-bottom:1px solid #232b3d"><span class=mono>${f.masked_value}</span> <b style="color:#f7931a">$${b.usd}</b> <span style="color:#8a94a8">${b.balance} ${b.unit||''} on ${f.target||''}</span> <button class=ghost onclick="detail(${f.id})">Open</button></div>`}).join('') : '<span style="color:#8a94a8">No enriched wallets yet. Balances fill in automatically when addresses land.</span>';
+  return `<div style="padding:4px 0;border-bottom:1px solid #232b3d"><span class=mono>${esc(f.masked_value)}</span> <b style="color:#f7931a">$${esc(b.usd)}</b> <span style="color:#8a94a8">${esc(b.balance)} ${esc(b.unit||'')} on ${esc(f.target||'')}</span> <button class=ghost onclick="detail(${f.id})">Open</button></div>`}).join('') : '<span style="color:#8a94a8">No enriched wallets yet. Balances fill in automatically when addresses land.</span>';
 }
 async function load(){
  const p=new URLSearchParams({search:$('q').value,chain:$('fchain').value,type:$('ftype').value,source:$('fsource').value,status:$('fstatus').value,sort:$('fsort').value});
  const d=await (await fetch('/api/findings?'+p)).json();
  $('rows').innerHTML=d.findings.map(f=>`<tr>
-  <td>${f.type}</td><td>${f.chain||''}</td>
-  <td class=mono>${f.masked_value}${controlsChip(f)}</td><td>${balCell(f)}</td><td>${f.target||''}</td><td>${f.source}</td>
-  <td class="sev-${f.severity}">${f.severity}</td><td>${f.status}</td>
-  <td>${(f.first_seen||'').slice(0,10)}</td>
+  <td>${esc(f.type)}</td><td>${esc(f.chain||'')}</td>
+  <td class=mono>${esc(f.masked_value)}${controlsChip(f)}</td><td>${balCell(f)}</td><td>${esc(f.target||'')}</td><td>${esc(f.source)}</td>
+  <td class="sev-${esc(f.severity)}">${esc(f.severity)}</td><td>${esc(f.status)}</td>
+  <td>${esc((f.first_seen||'').slice(0,10))}</td>
   <td><button class=ghost onclick="detail(${f.id})">Open</button></td></tr>`).join('');
  stats();
 }
@@ -160,18 +167,18 @@ async function detail(id){
  const f=await (await fetch('/api/findings/'+id)).json();
  $('drawer').style.display='block';
  $('drawer').innerHTML=`<button class=ghost onclick="$('drawer').style.display='none'">Close</button>
- <h3>${f.type} ${f.chain?'('+f.chain+')':''}</h3>
- <p><b>Value:</b><br><span class=mono>${f.masked_value}</span></p>
- <p><b>Fingerprint:</b><br><span class=mono>${f.fingerprint}</span></p>
- ${f.controls_address?`<p><b>Controls wallet:</b><br><span class=mono>${f.controls_address}</span> (${f.controls_chain})<br><b>Balance:</b>${ctlBalText(f).replace(' · ',' ')}<br><span style="color:#8a94a8">Derived from this secret at ingest. The secret itself was never stored.</span></p>`:''}
- <p><b>Label:</b> ${f.label||''}<br><b>Found on:</b> ${f.target||''}<br><b>Source:</b> ${f.source}<br>
- <b>Severity:</b> ${f.severity}<br><b>First seen:</b> ${f.first_seen}<br><b>Last seen:</b> ${f.last_seen}</p>
- ${f.note?`<p><b>Note:</b> ${f.note}</p>`:''}
+ <h3>${esc(f.type)} ${f.chain?'('+esc(f.chain)+')':''}</h3>
+ <p><b>Value:</b><br><span class=mono>${esc(f.masked_value)}</span></p>
+ <p><b>Fingerprint:</b><br><span class=mono>${esc(f.fingerprint)}</span></p>
+ ${f.controls_address?`<p><b>Controls wallet:</b><br><span class=mono>${esc(f.controls_address)}</span> (${esc(f.controls_chain)})<br><b>Balance:</b>${ctlBalText(f).replace(' · ',' ')}<br><span style="color:#8a94a8">Derived from this secret at ingest. The secret itself was never stored.</span></p>`:''}
+ <p><b>Label:</b> ${esc(f.label||'')}<br><b>Found on:</b> ${esc(f.target||'')}<br><b>Source:</b> ${esc(f.source)}<br>
+ <b>Severity:</b> ${esc(f.severity)}<br><b>First seen:</b> ${esc(f.first_seen)}<br><b>Last seen:</b> ${esc(f.last_seen)}</p>
+ ${f.note?`<p><b>Note:</b> ${esc(f.note)}</p>`:''}
  ${f.balance_json?(()=>{const b=JSON.parse(f.balance_json);
    if(b.not_public) return `<p><b>Balance:</b> not public. Monero balances cannot be viewed without a view key.</p>`;
-   if(!b.ok) return `<p><b>Balance:</b> lookup failed (${b.error||'error'}), fetched ${b.fetched_at||''}. Hit refresh to retry.</p>`;
-   const toks=(b.tokens||[]).filter(t=>t.balance>0).map(t=>`<br>&nbsp;&nbsp;${t.symbol}: ${t.balance} (~$${t.usd??'?'})`).join('');
-   return `<p><b>Balance:</b> ${b.balance} ${b.unit||''} = <b>$${b.usd??'?'}</b> (price $${b.price??'?'}, fetched ${b.fetched_at||''})${toks?`<br><b>Tokens:</b>${toks}`:''}</p>`;})():''}
+   if(!b.ok) return `<p><b>Balance:</b> lookup failed (${esc(b.error||'error')}), fetched ${esc(b.fetched_at||'')}. Hit refresh to retry.</p>`;
+   const toks=(b.tokens||[]).filter(t=>t.balance>0).map(t=>`<br>&nbsp;&nbsp;${esc(t.symbol)}: ${esc(t.balance)} (~$${esc(t.usd??'?')})`).join('');
+   return `<p><b>Balance:</b> ${esc(b.balance)} ${esc(b.unit||'')} = <b>$${esc(b.usd??'?')}</b> (price $${esc(b.price??'?')}, fetched ${esc(b.fetched_at||'')})${toks?`<br><b>Tokens:</b>${toks}`:''}</p>`;})():''}
  <p><b>Status:</b> <select id=dstatus>${['new','reviewed','reported','ignored'].map(s=>`<option ${s==f.status?'selected':''}>${s}</option>`).join('')}</select>
  <button class=ghost onclick="setStatus(${f.id})">Save</button></p>
  ${f.type=='address'?`<button onclick="balance(${f.id})">Refresh balance</button>`:''}`;
