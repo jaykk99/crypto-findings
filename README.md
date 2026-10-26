@@ -73,7 +73,7 @@ CRYPTO_FINDINGS_CODE=<code> RECON_ACCESS_CODE=<reconanything code> \
 
 Env vars: `CRYPTO_FINDINGS_CODE` (gate), `RECON_ACCESS_CODE`
 (ReconAnything pull), `RECON_BASE` (default
-https://recon-anything.onrender.com), `CRYPTO_FINDINGS_DB`
+the ReconAnything service URL), `CRYPTO_FINDINGS_DB`
 (SQLite path, default ./findings.db).
 
 ## Deploy
