@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from . import chain_ingest, db, enrich, recon, url_ingest
 from .parser import extract, Artifact
+from .csv_safe import spreadsheet_safe
 
 CODE = os.environ.get("CRYPTO_FINDINGS_CODE", "")
 STATIC = os.path.join(os.path.dirname(__file__), "..", "static")
@@ -239,7 +240,7 @@ def export_csv(request: Request):
             "target", "severity", "label", "status", "first_seen", "last_seen")
     w.writerow(cols)
     for r in _export_rows():
-        w.writerow([r[c] for c in cols])
+        w.writerow([spreadsheet_safe(r[c]) for c in cols])
     return PlainTextResponse(buf.getvalue(), media_type="text/csv",
                              headers={"Content-Disposition":
                                       "attachment; filename=crypto-findings.csv"})
