@@ -3,8 +3,10 @@
 Standalone collector for crypto scan findings. Every crypto artifact
 from your scans in one place, with balances attached.
 
-**Access code:** `Sg6KwaDaiVGl0xFq` (set as `CRYPTO_FINDINGS_CODE` in
-the server env; the app is gated by it, same pattern as Jay's other apps)
+**Access code:** Set `CRYPTO_FINDINGS_CODE` to a fresh random secret in
+the hosting environment. Never commit a real credential. If an access code
+was previously embedded in this README, treat it as exposed and rotate it
+in your deployment; removing the latest README text does not erase Git history.
 
 ## What it does
 
@@ -25,7 +27,7 @@ the server env; the app is gated by it, same pattern as Jay's other apps)
 3. **URL scan** - paste any URL (webpage, GitHub file, explorer page,
    docs). Fetched read-only, artifacts extracted, and crypto-relevant
    outbound links plus same-host pages followed one level deep
-   (max 25 pages). Shows pages scanned / artifacts / new vs dupe.
+   (max 25 pages). Private, loopback and reserved host destinations,\n   including redirects to them, are rejected (network-level egress controls\n   are still needed to address DNS rebinding). Shows pages scanned / artifacts / new vs dupe.
 4. **Blockchain pull** - paste a wallet address, an explorer URL
    (blockstream.info, etherscan.io, solscan.io, blockchain.com...),
    or a tx hash. Pulls balance + tokens, the last ~25 transactions,

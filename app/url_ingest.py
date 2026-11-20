@@ -8,11 +8,11 @@ whatever artifact the parser can checksum-verify in the text counts.
 from __future__ import annotations
 
 import re
-import urllib.request
 from urllib.parse import urljoin, urlparse
 
 from . import db
 from .parser import extract
+from .safe_http import public_get
 
 MAX_PAGES = 25
 MAX_CHARS = 500_000
@@ -21,9 +21,8 @@ CRYPTO_LINK_HINTS = ("address", "wallet", "token", "contract", "tx/",
 
 
 def fetch_text(url: str, timeout: int = 20) -> str:
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "crypto-findings/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    """Fetch a bounded public web page; block private URLs and redirects."""
+    with public_get(url, timeout=timeout) as r:
         raw = r.read(MAX_CHARS * 2)
     return raw.decode("utf-8", "replace")[:MAX_CHARS]
 
